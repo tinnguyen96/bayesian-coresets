@@ -12,3 +12,4 @@ stan_cache/
 
 */data/*
 *.ipynb_checkpoints/*
+*logs/
