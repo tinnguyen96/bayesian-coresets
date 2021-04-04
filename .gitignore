@@ -9,3 +9,6 @@ mcmc_cache/
 models/
 laplace_cache/
 stan_cache/
+
+*/data/*
+*.ipynb_checkpoints/*
