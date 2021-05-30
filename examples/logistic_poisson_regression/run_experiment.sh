@@ -1,5 +1,8 @@
 #!/bin/bash
 
+module load anaconda/2021a
+source activate pystan
+
 for dnm in "synth_lr" "phishing" "ds1"
 do
     for alg in "US" "GIGA-OPT" "GIGA-REAL" "SVI" 
