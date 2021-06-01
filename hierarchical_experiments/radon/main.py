@@ -11,7 +11,6 @@ import pickle
 
 #make it so we can import models/etc from parent folder
 sys.path.insert(1, os.path.join(sys.path[0], '../../examples/common'))
-import mcmc
 import results
 import plotting
 import radon
@@ -27,10 +26,17 @@ parser.add_argument('--opt_itrs', type=str, default = 100, help="Number of optim
 parser.add_argument('--step_sched', type=str, default = "lambda i : 1./(1+i)", help="Optimization step schedule (for methods that use iterative weight refinement); entered as a python lambda expression surrounded by quotes")
 parser.add_argument('--trial', type=int, help="The trial number - used to initialize random number generation (for replicability)")
 
+parser.add_argument('--verbosity', type=str, default="error", choices=['error', 'warning', 'critical', 'info', 'debug'], help="The verbosity level.")
+
 arguments = parser.parse_args()
 
+np.random.seed(arguments.trial)
+bc.util.set_verbosity(arguments.verbosity) 
+
 # load data
-data_dict_, prior_dict_ = radon.load_data()
+data_dict_ = radon.load_data()
+N = data_dict_["N"]
+print("Number of observations is %d" %N)
 
 stan_representation = radon.weighted_varying_intercept
 
@@ -49,40 +55,61 @@ else:
     sm_prior = pystan.StanModel(model_code=radon.prior_code)
     with open(path_without_data, 'wb') as f: pickle.dump(sm_prior, f)
 
-## load pystan fit object, which has functions to eval log_likelihood
-## we don't really need the samples from this stanfit, but it's convenient
-## to automatically evaluate log_likelihood (as opposed to making a separate
-## function to do it)
-
-print('Creating likelihood evaluator')
-stanfit = sm.sampling(data=data_dict_)
-# print(stanfit)
-likelihood = lambda pts, th: stanfit.log_prob(stanfit.unconstrain_pars(th))
-
 # create projectors
-print('Creating black box projector')
-
+print('Creating stan fit projector')
+ll_names = ["ll[%s]" %idx for idx in range(1,N+1)]
 def weighted_sampler(n, wts, pts):
-    if (wts is None) or (len(wts) == 0):
-        priorfit = sm_prior.sampling(data=prior_dict_, iter=2*n, chains=1)
-        samples = priorfit.extract()
+    """
+    Inputs:
+        n: scalar, number of samples to draw
+        wts: (m,) array, coreset weights where m is current number of coreset
+        pts: (m, D+1) array, coreset data, D is original number of dimensions
+            first column of pts is the index in the original data matrix
+
+    Output:
+        full_ll: (N, n) array of log likelihood, where N is original number 
+            of observations
+        wts_ll: (m, n) array of log likelihood for coreset points
+    """
+    print("wts", wts)
+    print("pts", pts)
+    if wts is None or pts is None or pts.shape[0] == 0:
+        priorfit = sm_prior.sampling(data=data_dict_, iter=2*n, chains=1, verbose=False)
+        df = priorfit.to_dataframe()
     else:
         weighted_data = data_dict_.copy()
-        weighted_data["w"] = wts
-        smallfit = sm.sampling(data=weighted_data, iter=2*n, chains=1)
-        samples = smallfit.extract()
-    return samples
+        wts_for_stan = np.zeros(N)
+        for idx_in_wts, weight in enumerate(wts):
+            idx_in_data = int(pts[0,idx_in_wts])
+            wts_for_stan[idx_in_data] = weight
+        weighted_data["w"] = wts_for_stan
+        smallfit = sm.sampling(data=weighted_data, iter=2*n, chains=1, verbose=False)
+        df = smallfit.to_dataframe()
+    full_ll = df[ll_names]
+    full_ll = np.array(full_ll).transpose()
+    
+    wts_ll = np.zeros((len(wts), n))
+    for idx_in_wts, weight in enumerate(wts):
+        idx_in_data = int(pts[0,idx_in_wts])
+        wts_ll[idx_in_wts, :] = weight*full_ll[idx_in_data,:]
+    return full_ll, wts_ll
 
-prj_bb = bc.BlackBoxProjector(weighted_sampler, arguments.proj_dim, likelihood, None)
+prj_sf = bc.StanFitProjector(weighted_sampler, N, arguments.proj_dim)
 
 ## we actually don't need to pass in data if we don't use n_subsample_select or 
 ## n_subsample_opt
-sparsevi = bc.SparseVICoreset(None, prj_bb, opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
+data_for_svi = np.vstack((np.arange(N), data_dict_["x"], data_dict_["y"])).transpose()
+print("data_for_svi.shape", data_for_svi.shape)
+
+sparsevi = bc.SparseVICoreset(data=data_for_svi, ll_projector=prj_sf, 
+                              n_subsample_select=None, n_subsample_opt=None, 
+                              opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
 
 Ms = np.unique(np.linspace(1, 100, 4, dtype=np.int32))
 
 alg = sparsevi
 
+print("Initiating coreset construction")
 for m in range(Ms.shape[0]):
     # print('M = ' + str(Ms[m]) + ': coreset construction, '+ arguments.alg + ' ' + arguments.dataset + ' ' + str(arguments.trial))
     #this runs alg up to a level of M; on the next iteration, it will continue from where it left off

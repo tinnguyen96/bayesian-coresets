@@ -10,38 +10,40 @@ import pystan
 # original model code
 varying_intercept = """
 data {
-int<lower=0> J; # number of counties
-int<lower=0> N; # number of observations
-int<lower=1,upper=J> county[N]; # which county does each observation belong to?
-vector[N] x;
-vector[N] y;
+    int<lower=0> J; # number of counties
+    int<lower=0> N; # number of observations
+    int<lower=1,upper=J> county[N]; # which county does each observation belong to?
+    vector[N] x;
+    vector[N] y;
 } 
 parameters {
-vector[J] a;
-real b;
-real mu_a;
-real<lower=0,upper=100> sigma_a;
-real<lower=0,upper=100> sigma_y;
+    vector[J] a;
+    real b;
+    real mu_a;
+    real<lower=0,upper=100> sigma_a;
+    real<lower=0,upper=100> sigma_y;
 } 
 transformed parameters {
 
-vector[N] y_hat;
+    vector[N] y_hat;
 
-for (i in 1:N)
-  y_hat[i] <- a[county[i]] + x[i] * b;
+    for (i in 1:N)
+      y_hat[i] <- a[county[i]] + x[i] * b;
 }
 model {
-sigma_a ~ uniform(0, 100);
-a ~ normal (mu_a, sigma_a);
+    sigma_a ~ uniform(0, 100);
+    a ~ normal (mu_a, sigma_a);
 
-b ~ normal (0, 1);
+    b ~ normal (0, 1);
 
-sigma_y ~ uniform(0, 100);
-y ~ normal(y_hat, sigma_y);
-}
+    sigma_y ~ uniform(0, 100);
+    y ~ normal(y_hat, sigma_y);
+    }
 """
 
 # weighted model code
+# different prior over a than original code, so that overall
+# prior is proper
 weighted_varying_intercept = """
 data {
     int<lower=0> J; 
@@ -51,6 +53,7 @@ data {
     vector[N] y;
     vector[N] w; 
 } 
+
 parameters {
     vector[J] a;
     real b;
@@ -58,28 +61,47 @@ parameters {
     real<lower=0,upper=100> sigma_a;
     real<lower=0,upper=100> sigma_y;
 } 
+
 transformed parameters {
     vector[N] y_hat;
 
     for (i in 1:N)
       y_hat[i] <- a[county[i]] + x[i] * b;
 }
+
 model {
+    mu_a ~ normal(0, 100);
     sigma_a ~ uniform(0, 100);
-    a ~ normal (mu_a, sigma_a);
     b ~ normal (0, 1);
     sigma_y ~ uniform(0, 100);
+    
+    a ~ normal (mu_a, sigma_a);
 
     for (i in 1:N)
-      target += w[i]*(-square(y[i]-y_hat[i])/(2*square(sigma_y))-log(sqrt(2*pi()*square(sigma_y))));
+      // target += w[i]*(-square(y[i]-y_hat[i])/(2*square(sigma_y))-log(sqrt(2*pi()*square(sigma_y))));
+      target += w[i]*normal_lpdf(y[i] | y_hat[i], sigma_y);
 }
+
+generated quantities {
+    vector[N] ll;
+    
+    for (i in 1:N)
+        ll[i] = normal_lpdf(y[i] | y_hat[i], sigma_y);
+    
+}
+
 """
 
 ## model code for prior
 prior_code = """
 data {
-    int<lower=0> J;
-}
+    int<lower=0> J; 
+    int<lower=0> N; 
+    int<lower=1,upper=J> county[N];
+    vector[N] x;
+    vector[N] y;
+    vector[N] w; 
+} 
 
 parameters {
     vector[J] a;
@@ -89,11 +111,26 @@ parameters {
     real<lower=0,upper=100> sigma_y;
 } 
 
+transformed parameters {
+    vector[N] y_hat;
+
+    for (i in 1:N)
+      y_hat[i] <- a[county[i]] + x[i] * b;
+}
+
 model {
+    mu_a ~ normal(0, 100);
     sigma_a ~ uniform(0, 100);
-    a ~ normal (mu_a, sigma_a);
     b ~ normal (0, 1);
     sigma_y ~ uniform(0, 100);
+    
+    a ~ normal (mu_a, sigma_a);
+}
+
+generated quantities {
+    vector[N] ll;
+    for (i in 1:N)
+        ll[i] = normal_lpdf(y[i] | y_hat[i], sigma_y);
 }
 """
 
@@ -131,8 +168,7 @@ def load_data():
                       'w': np.ones(len(log_radon)),
                       'y': log_radon}
             
-    prior_data = {'J': len(n_county)}
-    return data, prior_data
+    return data
 
 if (False):
     # varying intercept fit
