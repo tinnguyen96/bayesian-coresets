@@ -69,7 +69,7 @@ def weighted_sampler(n, wts, pts):
     Output:
         full_ll: (N, n) array of log likelihood, where N is original number 
             of observations
-        wts_ll: (m, n) array of log likelihood for coreset points
+        pts_ll: (m, n) array of log likelihood for coreset points
     """
     print("wts", wts)
     print("pts", pts)
@@ -88,11 +88,11 @@ def weighted_sampler(n, wts, pts):
     full_ll = df[ll_names]
     full_ll = np.array(full_ll).transpose()
     
-    wts_ll = np.zeros((len(wts), n))
+    pts_ll = np.zeros((len(wts), n))
     for idx_in_wts, weight in enumerate(wts):
         idx_in_data = int(pts[0,idx_in_wts])
-        wts_ll[idx_in_wts, :] = weight*full_ll[idx_in_data,:]
-    return full_ll, wts_ll
+        pts_ll[idx_in_wts, :] = full_ll[idx_in_data,:]
+    return full_ll, pts_ll
 
 prj_sf = bc.StanFitProjector(weighted_sampler, N, arguments.proj_dim)
 

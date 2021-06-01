@@ -55,9 +55,9 @@ class StanFitProjector(Projector):
         if (len(pts) == self.N):
             lls = self.full_lls.copy()
         else:
-            lls = self.wts_lls.copy()
+            lls = self.pts_lls.copy()
         lls -= lls.mean(axis=1)[:,np.newaxis]
         return lls
 
     def update(self, wts, pts):
-        self.full_lls, self.wts_lls = self.sampler(self.projection_dimension, wts, pts)
+        self.full_lls, self.pts_lls = self.sampler(self.projection_dimension, wts, pts)
