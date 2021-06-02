@@ -88,7 +88,7 @@ if __name__ == "__main__":
             weighted_data = data_dict_.copy()
             wts_for_stan = np.zeros(N)
             for idx_in_wts, weight in enumerate(wts):
-                idx_in_data = int(pts[0,idx_in_wts])
+                idx_in_data = int(pts[idx_in_wts,0])
                 wts_for_stan[idx_in_data] = weight
             weighted_data["w"] = wts_for_stan
             smallfit = sm.sampling(data=weighted_data, iter=2*n, chains=1, 
@@ -97,12 +97,12 @@ if __name__ == "__main__":
         full_ll = df[ll_names]
         full_ll = np.array(full_ll).transpose()
 
-        wts_ll = np.zeros((len(wts), n))
+        pts_ll = np.zeros((len(wts), n))
         for idx_in_wts, weight in enumerate(wts):
-            idx_in_data = int(pts[0,idx_in_wts])
-            wts_ll[idx_in_wts, :] = weight*full_ll[idx_in_data,:]
+            idx_in_data = int(pts[idx_in_wts,0])
+            pts_ll[idx_in_wts, :] = full_ll[idx_in_data,:]
         num_weighted_sampler += 1
-        return full_ll, wts_ll
+        return full_ll, pts_ll
 
     prj_sf = bc.StanFitProjector(weighted_sampler, N, arguments.proj_dim)
 
@@ -129,6 +129,10 @@ if __name__ == "__main__":
         alg.build(itrs)
         t_alg += time.process_time()-t0
         wts, pts, idcs = alg.get()
+        dict_ = {"wts": wts, "pts": pts, "idcs": idcs, "data_dict":data_dict_}
+        savepath = savedir + "/coreset_M=%d.pkl" %Ms[m]
+        print("Saving coreset info to %s" %savepath)
+        with open(savepath, 'wb') as f: pickle.dump(dict_, f)
 
         print('M = ' + str(Ms[m]) + ': MCMC')
         # Use MCMC on the coreset, measure time taken 
@@ -139,11 +143,14 @@ if __name__ == "__main__":
             idx_in_data = int(pts[0,idx_in_wts])
             wts_for_stan[idx_in_data] = weight
         weighted_data["w"] = wts_for_stan
-        coresetfit = sm.sampling(data=weighted_data, iter=2*1000, chains=4, seed=arguments.trial)
-        
-        savepath = savedir + "/coreset_M=%d.pkl" %Ms[m]
-        print("Will save coreset fit to %s" %savepath)
-        with open(savepath, 'wb') as f: pickle.dump(coresetfit, f)
+        coresetfit = sm.sampling(data=weighted_data, iter=2*1000, chains=4, 
+                        refresh=0, seed=arguments.trial)
+
+        if (arguments.save_samples):
+            df = coresetfit.to_dataframe()
+            savepath = savedir + "/coreset_M=%d_samples.pkl" %Ms[m]
+            print("Will save coreset fit to %s" %savepath)
+            with open(savepath, 'wb') as f: pickle.dump(df, f)
             
         a_sample = pd.DataFrame(coresetfit['a'])
         sns.set(style="ticks", palette="muted", color_codes=True)
