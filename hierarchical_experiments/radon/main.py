@@ -116,6 +116,7 @@ if __name__ == "__main__":
                                   opt_itrs = arguments.opt_itrs, step_sched = eval(arguments.step_sched))
 
     Ms = np.unique(np.linspace(1, 100, 4, dtype=np.int32))
+    print("Will construct coreset sizes in ", Ms)
 
     alg = sparsevi
 
@@ -127,7 +128,9 @@ if __name__ == "__main__":
         t0 = time.process_time()
         itrs = (Ms[m] if m == 0 else Ms[m] - Ms[m-1])
         alg.build(itrs)
-        t_alg += time.process_time()-t0
+        time_elapsed = time.process_time()-t0
+        print("time since last coreset size (minutes) %.2f" %(time_elapsed/60))
+        t_alg += time_elapsed
         wts, pts, idcs = alg.get()
         dict_ = {"wts": wts, "pts": pts, "idcs": idcs, "data_dict":data_dict_}
         savepath = savedir + "/coreset_M=%d.pkl" %Ms[m]
@@ -140,7 +143,7 @@ if __name__ == "__main__":
 
         wts_for_stan = np.zeros(N)
         for idx_in_wts, weight in enumerate(wts):
-            idx_in_data = int(pts[0,idx_in_wts])
+            idx_in_data = int(pts[idx_in_wts,0])
             wts_for_stan[idx_in_data] = weight
         weighted_data["w"] = wts_for_stan
         coresetfit = sm.sampling(data=weighted_data, iter=2*1000, chains=4, 
